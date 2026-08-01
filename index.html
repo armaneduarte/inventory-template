@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three Dee Lab - Inventory Tracker</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM (Loaded from CDN for standalone HTML functionality) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (Compiles JSX inside the browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Chart.js for Inventory Data Visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- JsBarcode for visual barcode generation (Code 128) -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+    <style>
+        /* Print Specific Styles to hide menus and format for A4 */
+        @media print {
+            body { background-color: white !important; }
+            .print-hide { display: none !important; }
+            .print-expand { 
+                width: 100% !important; 
+                max-width: 100% !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                border: none !important; 
+                box-shadow: none !important; 
+            }
+            .print-text-black { color: black !important; }
+            .print-border { border: 1px solid #e5e7eb !important; }
+            .print-page-break { page-break-inside: avoid; }
+            @page { margin: 1cm; size: A4 portrait; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800">
+
+    <!-- React Root DOM Node -->
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- INVENTORY CHART COMPONENT ---
+        function InventoryChart({ inventory }) {
+            const canvasRef = React.useRef(null);
+            const chartInstance = React.useRef(null);
+
+            useEffect(() => {
+                if (!canvasRef.current) return;
+                
+                const categories = ['PLA', 'PETG', 'ABS/ASA', 'TPU', 'Resin', 'Hardware', 'Other'];
+                
+                // Separate counts for active stock vs damaged, and exclude damaged from value
+                const counts = categories.map(cat => inventory.filter(i => i.category === cat && i.status !== 'Damaged').length);
+                const damagedCounts = categories.map(cat => inventory.filter(i => i.category === cat && i.status === 'Damaged').length);
+                const values = categories.map(cat => inventory.filter(i => i.category === cat && i.status !== 'Damaged').reduce((sum, item) => sum + (item.cost * (item.totalAmount > 0 ? item.remainingAmount/item.totalAmount : 0)), 0));
+
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+
+                const ctx = canvasRef.current.getContext('2d');
+                
+                // Create Modern 3D-like Gradients inspired by the image
+                const yellowGradient = ctx.createLinearGradient(0, 0, 0, 300);
+                yellowGradient.addColorStop(0, '#FDE047'); // Shiny top highlight
+                yellowGradient.addColorStop(1, '#D97706'); // Deep amber bottom
+
+                const orangeGradient = ctx.createLinearGradient(0, 0, 0, 300);
+                orangeGradient.addColorStop(0, '#FB923C'); // Shiny top highlight
+                orangeGradient.addColorStop(1, '#C2410C'); // Deep orange bottom
+
+                const grayGradient = ctx.createLinearGradient(0, 0, 0, 300);
+                grayGradient.addColorStop(0, '#CBD5E1'); // Shiny slate top
+                grayGradient.addColorStop(1, '#475569'); // Deep slate bottom
+
+                chartInstance.current = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: categories,
+                        datasets: [
+                            {
+                                label: 'Items in Stock',
+                                data: counts,
+                                backgroundColor: yellowGradient,
+                                borderRadius: 12,
+                                borderSkipped: false,
+                                barPercentage: 0.6,
+                                categoryPercentage: 0.8,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Damaged Items',
+                                data: damagedCounts,
+                                backgroundColor: grayGradient,
+                                borderRadius: 12,
+                                borderSkipped: false,
+                                barPercentage: 0.6,
+                                categoryPercentage: 0.8,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Est. Value (₱)',
+                                data: values,
+                                backgroundColor: orangeGradient,
+                                borderRadius: 12,
+                                borderSkipped: false,
+                                barPercentage: 0.6,
+                                categoryPercentage: 0.8,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { 
+                            legend: { 
+                                position: 'top',
+                                labels: { usePointStyle: true, padding: 20, font: { weight: 'bold' } }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                                padding: 12,
+                                titleFont: { size: 14 },
+                                cornerRadius: 8
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { weight: '600', color: '#475569' } }
+                            },
+                            y: { 
+                                type: 'linear', display: true, position: 'left', 
+                                title: { display: true, text: 'Item Count', font: { weight: 'bold' } }, 
+                                beginAtZero: true,
+                                grid: { color: '#f1f5f9' },
+                                border: { display: false }
+                            },
+                            y1: { 
+                                type: 'linear', display: true, position: 'right', 
+                                title: { display: true, text: 'Value (₱)', font: { weight: 'bold' } }, 
+                                beginAtZero: true,
+                                grid: { drawOnChartArea: false },
+                                border: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                return () => {
+                    if (chartInstance.current) chartInstance.current.destroy();
+                };
+            }, [inventory]);
+
+            return (
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mt-6 print-hide">
+                    <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
+                        <span className="bg-orange-100 text-orange-600 p-2 rounded-lg leading-none"><i className="fa-solid fa-chart-simple"></i></span>
+                        Inventory Overview
+                    </h3>
+                    <div className="w-full h-72">
+                        <canvas ref={canvasRef}></canvas>
+                    </div>
+                </div>
+            );
+        }
+
+        function App() {
+            // --- STATE MANAGEMENT ---
+            const [inventory, setInventory] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('tdl_inventory_data_v5'); // Version bumped for fresh start
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        return parsed.map(item => ({ ...item, rating: item.rating || 0, history: item.history || [], enableReorderAlert: item.enableReorderAlert !== false }));
+                    }
+                    
+                    return []; // Fresh data array, 0 items by default
+                } catch (e) {
+                    return [];
+                }
+            });
+
+            const defaultFormState = {
+                id: null,
+                category: 'Hardware',
+                customCategory: '',
+                sku: '',
+                supplier: '',
+                brand: '',
+                itemName: '',
+                description: '',
+                location: '',
+                totalAmount: 1,
+                remainingAmount: 1,
+                reorderLevel: 1,
+                enableReorderAlert: true, // Stock alert Stop/Go control
+                unitType: 'pcs',
+                status: 'Auto',
+                cost: 0,
+                retailPrice: 0,
+                imageUrl: '',
+                rating: 0,
+                lastUpdated: new Date().toISOString()
+            };
+
+            const [formData, setFormData] = useState(defaultFormState);
+            const [isEditing, setIsEditing] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [filterCategory, setFilterCategory] = useState('All');
+            const [filterStatus, setFilterStatus] = useState('All');
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [historyModalItem, setHistoryModalItem] = useState(null); // Controls History Modal
+
+            // --- BARCODE SCANNER STATE ---
+            const [isScannerActive, setIsScannerActive] = useState(false);
+            const [scanFeedback, setScanFeedback] = useState(''); // Success message after scan
+
+            // --- AUTH STATE (Login Security) ---
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [currentUser, setCurrentUser] = useState('');
+            const [loginError, setLoginError] = useState('');
+            const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+
+            // Live Clock Update
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // Save to local storage on change
+            useEffect(() => {
+                localStorage.setItem('tdl_inventory_data_v5', JSON.stringify(inventory));
+            }, [inventory]);
+
+            // Check for existing login session on app load (persists across refreshes)
+            useEffect(() => {
+                const loggedInFlag = localStorage.getItem('tdl_is_logged_in') === 'true';
+                const savedUser = localStorage.getItem('tdl_current_user') || '';
+                if (loggedInFlag && savedUser) {
+                    setIsLoggedIn(true);
+                    setCurrentUser(savedUser);
+                }
+            }, []);
+
+            // --- BARCODE SCANNER (Keyboard emulation support) ---
+            // Many cheap barcode scanners act as keyboards and type very fast + Enter.
+            const barcodeBufferRef = useRef('');
+            const lastKeyTimeRef = useRef(0);
+
+            useEffect(() => {
+                if (!isLoggedIn) return;
+
+                const handleKeyDown = (e) => {
+                    const now = Date.now();
+                    const timeSinceLastKey = now - lastKeyTimeRef.current;
+
+                    // Reset buffer if typing is slow (normal human typing) or too much time passed
+                    if (timeSinceLastKey > 80 && barcodeBufferRef.current.length > 0) {
+                        barcodeBufferRef.current = '';
+                    }
+
+                    if (e.key.length === 1) {
+                        // Printable character - add to buffer
+                        barcodeBufferRef.current += e.key;
+                    } else if (e.key === 'Enter' && barcodeBufferRef.current.length >= 4) {
+                        // Likely a barcode scan (long code + fast Enter from scanner)
+                        const scannedCode = barcodeBufferRef.current.trim().toUpperCase();
+
+                        // Only apply if it looks like a real barcode (not short normal input)
+                        if (scannedCode.length >= 4) {
+                            setFormData(prev => ({ ...prev, sku: scannedCode }));
+                            
+                            // Nice visual feedback
+                            setScanFeedback(`✓ Scanned: ${scannedCode}`);
+                            setTimeout(() => setScanFeedback(''), 2200);
+
+                            // Optional: flash the SKU input green briefly
+                            const skuInput = document.querySelector('input[name="sku"]');
+                            if (skuInput) {
+                                skuInput.style.transition = 'all 0.2s';
+                                skuInput.style.boxShadow = '0 0 0 3px rgb(52 211 153 / 0.5)';
+                                setTimeout(() => {
+                                    if (skuInput) skuInput.style.boxShadow = '';
+                                }, 600);
+                            }
+
+                            // If scanner mode was manually activated, turn it off after successful scan
+                            if (isScannerActive) {
+                                setIsScannerActive(false);
+                            }
+                        }
+                        barcodeBufferRef.current = '';
+                    }
+
+                    lastKeyTimeRef.current = now;
+                };
+
+                document.addEventListener('keydown', handleKeyDown);
+                return () => document.removeEventListener('keydown', handleKeyDown);
+            }, [isLoggedIn, isScannerActive, setFormData]);
+
+            // --- VISUAL BARCODE GENERATION (after SKU is set) ---
+            const barcodeSvgRef = useRef(null);
+
+            useEffect(() => {
+                if (formData.sku && barcodeSvgRef.current && window.JsBarcode) {
+                    try {
+                        JsBarcode(barcodeSvgRef.current, formData.sku, {
+                            format: "CODE128",
+                            width: 2.2,
+                            height: 55,
+                            displayValue: true,
+                            fontSize: 13,
+                            margin: 8,
+                            background: "#ffffff",
+                            lineColor: "#1e2937"
+                        });
+                    } catch (err) {
+                        // If SKU has unsupported characters, hide or show fallback
+                        if (barcodeSvgRef.current) {
+                            barcodeSvgRef.current.style.display = 'none';
+                        }
+                    }
+                }
+            }, [formData.sku]);
+
+            // --- SKU GENERATOR (Category-based sequential) ---
+            const getCategoryPrefix = (category, customCategory) => {
+                if (category === 'Other') {
+                    if (customCategory && customCategory.trim()) {
+                        const cleaned = customCategory.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                        return cleaned.slice(0, 5) || 'CUST';
+                    }
+                    return 'CUST';
+                }
+                const prefixMap = {
+                    'PLA': 'PLA',
+                    'PETG': 'PETG',
+                    'ABS/ASA': 'ABS',
+                    'TPU': 'TPU',
+                    'Resin': 'RES',
+                    'Hardware': 'HW'
+                };
+                return prefixMap[category] || 'GEN';
+            };
+
+            const generateAutoSKU = (category, customCategory, currentInventory) => {
+                const prefix = getCategoryPrefix(category, customCategory);
+                // Match existing SKUs like "PLA-001", "RES-042", "CUST-007" (flexible number of digits)
+                const regex = new RegExp(`^${prefix}-(\\d+)$`);
+                const existingNums = currentInventory
+                    .filter(item => item.sku && regex.test(item.sku))
+                    .map(item => parseInt(item.sku.match(regex)[1], 10));
+                const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 0;
+                const nextNum = maxNum + 1;
+                return `${prefix}-${String(nextNum).padStart(3, '0')}`;
+            };
+
+            const isSkuUnique = (skuToCheck, excludeId = null) => {
+                if (!skuToCheck || !skuToCheck.trim()) return true;
+                const normalized = skuToCheck.trim().toUpperCase();
+                return !inventory.some(item => 
+                    item.sku && item.sku.toUpperCase() === normalized && item.id !== excludeId
+                );
+            };
+
+            // --- LOGIC & HANDLERS ---
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                let processedValue = value;
+                if (name === 'sku') {
+                    processedValue = value.toUpperCase().trim();
+                }
+                setFormData(prev => ({ ...prev, [name]: processedValue }));
+            };
+
+            const toggleBarcodeScanner = () => {
+                const newState = !isScannerActive;
+                setIsScannerActive(newState);
+                
+                if (newState) {
+                    // Focus the SKU input when activating scanner
+                    setTimeout(() => {
+                        const skuInput = document.querySelector('input[name="sku"]');
+                        if (skuInput) skuInput.focus();
+                    }, 100);
+                    setScanFeedback('Scanner active — Scan barcode with your device now');
+                    setTimeout(() => setScanFeedback(''), 1800);
+                } else {
+                    setScanFeedback('');
+                }
+            };
+
+            // Download current barcode as PNG
+            const downloadBarcodePNG = () => {
+                if (!barcodeSvgRef.current || !formData.sku) return;
+
+                const svg = barcodeSvgRef.current;
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const svgData = new XMLSerializer().serializeToString(svg);
+                const img = new Image();
+
+                img.onload = () => {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+
+                    const link = document.createElement("a");
+                    link.download = `barcode_${formData.sku}.png`;
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                };
+
+                img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+            };
+
+            // Print a clean barcode label (opens print dialog with nice layout)
+            const printBarcodeLabel = () => {
+                if (!formData.sku) return;
+
+                const printWindow = window.open('', '_blank', 'width=400,height=300');
+                const brand = formData.brand || '';
+                const itemName = formData.itemName || '';
+                const location = formData.location || '';
+
+                printWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Barcode Label - ${formData.sku}</title>
+                        <style>
+                            @page { size: 80mm 40mm; margin: 3mm; }
+                            body { 
+                                font-family: system-ui, -apple-system, sans-serif; 
+                                margin: 0; 
+                                padding: 8px;
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                height: 100%;
+                            }
+                            .label {
+                                width: 100%;
+                                text-align: center;
+                            }
+                            .sku { 
+                                font-size: 11px; 
+                                font-weight: 700; 
+                                letter-spacing: 1px;
+                                margin-bottom: 4px;
+                            }
+                            .info { 
+                                font-size: 9px; 
+                                color: #334155; 
+                                margin-bottom: 6px;
+                                line-height: 1.3;
+                            }
+                            svg { max-width: 100%; height: auto; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="label">
+                            <div class="sku">${formData.sku}</div>
+                            ${brand || itemName ? `<div class="info">${brand} ${itemName ? '• ' + itemName : ''}</div>` : ''}
+                            ${location ? `<div class="info" style="font-size:8px; color:#64748b;">📍 ${location}</div>` : ''}
+                            <div id="print-barcode"></div>
+                        </div>
+                        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script>
+                        <script>
+                            setTimeout(() => {
+                                const container = document.getElementById('print-barcode');
+                                const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                                container.appendChild(svg);
+                                
+                                JsBarcode(svg, "${formData.sku}", {
+                                    format: "CODE128",
+                                    width: 1.8,
+                                    height: 45,
+                                    displayValue: false,
+                                    margin: 4
+                                });
+                                
+                                window.print();
+                                setTimeout(() => window.close(), 300);
+                            }, 300);
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            };
+
+            const handleSave = (e) => {
+                e.preventDefault();
+                
+                const oldItem = isEditing ? inventory.find(i => i.id === formData.id) : null;
+                const historyLog = oldItem ? [...(oldItem.history || [])] : [];
+                const newRemaining = parseFloat(formData.remainingAmount) || 0;
+                
+                // Track In/Out History automatically on save
+                if (oldItem && oldItem.remainingAmount !== newRemaining) {
+                    const diff = newRemaining - oldItem.remainingAmount;
+                    historyLog.push({
+                        date: new Date().toISOString(),
+                        change: Math.abs(diff),
+                        type: diff > 0 ? 'IN' : 'OUT',
+                        notes: 'Manual edit update'
+                    });
+                } else if (!oldItem) {
+                    historyLog.push({
+                        date: new Date().toISOString(),
+                        change: newRemaining,
+                        type: 'IN',
+                        notes: 'Initial stock added'
+                    });
+                }
+
+                const newItem = {
+                    ...formData,
+                    id: isEditing ? formData.id : Date.now().toString(),
+                    totalAmount: parseFloat(formData.totalAmount) || 0,
+                    remainingAmount: newRemaining,
+                    reorderLevel: parseFloat(formData.reorderLevel) || 0,
+                    enableReorderAlert: formData.enableReorderAlert,
+                    cost: parseFloat(formData.cost) || 0,
+                    retailPrice: parseFloat(formData.retailPrice) || 0,
+                    rating: parseInt(formData.rating) || 0,
+                    history: historyLog,
+                    lastUpdated: new Date().toISOString()
+                };
+
+                // SKU Uniqueness enforcement (protects against manual duplicates)
+                if (newItem.sku && newItem.sku.trim()) {
+                    const unique = isSkuUnique(newItem.sku, isEditing ? formData.id : null);
+                    if (!unique) {
+                        alert(`SKU "${newItem.sku}" is already in use by another item.\n\nPlease edit the SKU or click the GENERATE button to create a unique one.`);
+                        return; // Stop save, let user correct
+                    }
+                }
+
+                if (isEditing) {
+                    setInventory(inventory.map(item => item.id === newItem.id ? newItem : item));
+                } else {
+                    setInventory([newItem, ...inventory]);
+                }
+                
+                handleReset();
+            };
+
+            // Quick Stock Adjustment (+/- buttons in table)
+            const handleStockAdjust = (item, amount, customNote) => {
+                const newRemaining = Math.max(0, item.remainingAmount + amount);
+                if (newRemaining === item.remainingAmount) return;
+
+                const diff = newRemaining - item.remainingAmount;
+                const historyLog = [...(item.history || [])];
+                
+                historyLog.push({
+                    date: new Date().toISOString(),
+                    change: Math.abs(diff),
+                    type: diff > 0 ? 'IN' : 'OUT',
+                    notes: customNote || (diff > 0 ? 'Quick restock' : 'Quick consumption')
+                });
+
+                const updatedItem = {
+                    ...item,
+                    remainingAmount: newRemaining,
+                    history: historyLog,
+                    lastUpdated: new Date().toISOString()
+                };
+
+                setInventory(inventory.map(i => i.id === item.id ? updatedItem : i));
+            };
+
+            const handleEdit = (item) => {
+                setFormData(item);
+                setIsEditing(true);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const handleDelete = (id) => {
+                if (window.confirm("Are you sure you want to delete this material?")) {
+                    setInventory(inventory.filter(item => item.id !== id));
+                    if (formData.id === id) handleReset();
+                }
+            };
+
+            const handleReset = () => {
+                setFormData(defaultFormState);
+                setIsEditing(false);
+            };
+
+            const handlePrint = () => {
+                window.print();
+            };
+
+            const handleClearDatabase = () => {
+                if (window.confirm("WARNING: This will completely wipe out your entire inventory and history log. Are you sure you want to start fresh?")) {
+                    setInventory([]);
+                    handleReset();
+                }
+            };
+
+            // --- AUTH HANDLERS (Login / Logout Security) ---
+            const handleLogin = (e) => {
+                e.preventDefault();
+                
+                // Demo credentials - change these for your use case or make dynamic in future
+                const VALID_USERNAME = 'admin';
+                const VALID_PASSWORD = 'threedee123';
+                
+                if (loginForm.username.trim() === VALID_USERNAME && loginForm.password === VALID_PASSWORD) {
+                    const user = loginForm.username.trim();
+                    setIsLoggedIn(true);
+                    setCurrentUser(user);
+                    localStorage.setItem('tdl_is_logged_in', 'true');
+                    localStorage.setItem('tdl_current_user', user);
+                    setLoginError('');
+                    setLoginForm({ username: '', password: '' });
+                } else {
+                    setLoginError('Invalid username or password. Please try again.');
+                }
+            };
+
+            const handleLogout = () => {
+                if (window.confirm("Are you sure you want to log out?")) {
+                    setIsLoggedIn(false);
+                    setCurrentUser('');
+                    localStorage.removeItem('tdl_is_logged_in');
+                    localStorage.removeItem('tdl_current_user');
+                    // Inventory data remains safe in localStorage
+                }
+            };
+
+            // --- EXPORT TO EXCEL (CSV) ---
+            const handleExportExcel = () => {
+                const headers = [
+                    'Date Updated', 'Category', 'Custom Type', 'SKU/Barcode', 'Supplier', 'Brand/Company', 'Item Name', 'Description', 'Location',
+                    'Total Unit Size', 'Remaining Stock', 'Reorder Level', 'Alerts Active', 'Unit Metric', 'Status', 'Unit Cost (PHP)', 'Retail Price (PHP)', 'Est. Total Value (PHP)', 'Performance Rating', 'Image Link'
+                ];
+                
+                const rows = inventory.map(item => {
+                    const value = item.totalAmount > 0 ? (item.remainingAmount / item.totalAmount) * item.cost : 0;
+                    return [
+                        new Date(item.lastUpdated).toLocaleString(),
+                        item.category,
+                        item.customCategory || 'N/A',
+                        item.sku || 'N/A',
+                        item.supplier || 'N/A',
+                        item.brand,
+                        item.itemName,
+                        item.description || 'N/A',
+                        item.location || 'N/A',
+                        item.totalAmount,
+                        item.remainingAmount,
+                        item.reorderLevel || 0,
+                        item.enableReorderAlert !== false ? 'Yes' : 'No',
+                        item.unitType,
+                        item.status !== 'Auto' ? item.status : 'Auto',
+                        item.cost.toFixed(2),
+                        (item.retailPrice || 0).toFixed(2),
+                        value.toFixed(2),
+                        item.rating || 0,
+                        item.imageUrl || 'No Image'
+                    ];
+                });
+
+                const csvContent = [
+                    headers.join(','),
+                    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+                ].join('\n');
+
+                const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', `TDL_Inventory_${new Date().toISOString().split('T')[0]}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            // --- DERIVED DATA ---
+            const damagedCount = inventory.filter(item => item.status === 'Damaged').length;
+
+            const filteredInventory = inventory.filter(item => {
+                const searchString = (item.sku + ' ' + item.brand + ' ' + item.itemName + ' ' + item.supplier + ' ' + item.category + ' ' + item.location).toLowerCase();
+                const matchesSearch = searchString.includes(searchQuery.toLowerCase());
+                const matchesCategory = filterCategory === 'All' || item.category === filterCategory || (filterCategory === 'Other' && item.category === 'Other');
+                const matchesStatus = filterStatus === 'All' || item.status === filterStatus;
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            const totalValue = inventory.reduce((sum, item) => {
+                if (item.status === 'Damaged') return sum;
+                const percentLeft = item.totalAmount > 0 ? (item.remainingAmount / item.totalAmount) : 0;
+                return sum + (item.cost * percentLeft);
+            }, 0);
+
+            const lowStockCount = inventory.filter(item => {
+                if (item.status === 'Damaged') return false;
+                if (item.status === 'Low' || item.status === 'Reorder') return true;
+                if (item.status !== 'Auto') return false;
+                if (item.enableReorderAlert === false) return false; // Respect stop/go toggle
+                return item.remainingAmount <= (item.reorderLevel || 0);
+            }).length;
+
+            const categories = ['PLA', 'PETG', 'ABS/ASA', 'TPU', 'Resin', 'Hardware', 'Other'];
+
+            // --- HELPER COMPONENTS ---
+            const StatusBadge = ({ item }) => {
+                const status = item.status;
+                if (status && status !== 'Auto') {
+                    if (status === 'In Stock') return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"><i className="fa-solid fa-circle-check text-[10px]"></i> In Stock</span>;
+                    if (status === 'Low') return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200"><i className="fa-solid fa-triangle-exclamation text-[10px]"></i> Low</span>;
+                    if (status === 'Reorder') return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"><i className="fa-solid fa-rotate text-[10px]"></i> Reorder</span>;
+                    if (status === 'Ordered') return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"><i className="fa-solid fa-truck text-[10px]"></i> Ordered</span>;
+                    if (status === 'Damaged') return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-200 text-stone-800 border border-stone-300"><i className="fa-solid fa-burst text-[10px]"></i> Damaged</span>;
+                }
+
+                if (item.enableReorderAlert === false) {
+                    return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200" title="Alerts Disabled"><i className="fa-solid fa-bell-slash text-[10px]"></i> No Alert</span>;
+                }
+
+                // Automatic threshold calculation based on user's Reorder Level
+                if (item.remainingAmount <= item.reorderLevel && item.reorderLevel > 0) return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200"><i className="fa-solid fa-triangle-exclamation text-[10px]"></i> Critical</span>;
+                const pct = item.totalAmount > 0 ? (item.remainingAmount / item.totalAmount) * 100 : 0;
+                if (pct > 50) return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"><i className="fa-solid fa-circle-check text-[10px]"></i> Good</span>;
+                if (pct > 20) return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"><i className="fa-solid fa-circle-exclamation text-[10px]"></i> Low</span>;
+                return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200"><i className="fa-solid fa-triangle-exclamation text-[10px]"></i> Critical</span>;
+            };
+
+            const getCategoryIcon = (cat, isDamaged = false) => {
+                if (isDamaged) {
+                    if (cat === 'Resin') return <i className="fa-solid fa-flask text-slate-500"></i>;
+                    if (cat === 'Hardware') return <i className="fa-solid fa-wrench text-slate-500"></i>;
+                    return <i className="fa-solid fa-cube text-slate-500"></i>;
+                }
+                if (cat === 'Resin') return <i className="fa-solid fa-flask text-purple-500"></i>;
+                if (cat === 'Hardware') return <i className="fa-solid fa-wrench text-gray-500"></i>;
+                return <i className="fa-solid fa-cube text-blue-500"></i>;
+            };
+
+            return (
+                !isLoggedIn ? (
+                    // ==================== LOGIN SCREEN ====================
+                    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+                        <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
+                            
+                            {/* Login Header */}
+                            <div className="bg-slate-900 px-8 py-10 text-center">
+                                <div className="mx-auto w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4 shadow-inner">
+                                    <i className="fa-solid fa-layer-group text-4xl text-slate-900"></i>
+                                </div>
+                                <h1 className="text-3xl font-bold text-white tracking-tight">Three Dee Lab</h1>
+                                <p className="text-slate-400 text-sm mt-1.5 font-medium">Inventory Tracker — Secure Login</p>
+                            </div>
+
+                            <div className="p-8 pt-7">
+                                <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-semibold text-slate-800">Welcome back</h2>
+                                    <p className="text-slate-500 text-sm mt-1">Please sign in to access your inventory</p>
+                                </div>
+
+                                {loginError && (
+                                    <div className="mb-5 p-3.5 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-xl text-sm flex items-start gap-3">
+                                        <i className="fa-solid fa-exclamation-triangle mt-0.5"></i>
+                                        <span>{loginError}</span>
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleLogin} className="space-y-5">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 tracking-[1px] mb-1.5 pl-1">USERNAME</label>
+                                        <div className="relative">
+                                            <div className="absolute left-4 top-3.5 text-slate-400">
+                                                <i className="fa-solid fa-user"></i>
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                value={loginForm.username}
+                                                onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                                                className="w-full pl-11 pr-4 py-3.5 border border-slate-300 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 rounded-2xl text-base placeholder:text-slate-400"
+                                                placeholder="admin"
+                                                autoComplete="username"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 tracking-[1px] mb-1.5 pl-1">PASSWORD</label>
+                                        <div className="relative">
+                                            <div className="absolute left-4 top-3.5 text-slate-400">
+                                                <i className="fa-solid fa-lock"></i>
+                                            </div>
+                                            <input 
+                                                type="password" 
+                                                value={loginForm.password}
+                                                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                                                className="w-full pl-11 pr-4 py-3.5 border border-slate-300 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 rounded-2xl text-base placeholder:text-slate-400"
+                                                placeholder="••••••••••"
+                                                autoComplete="current-password"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        className="w-full mt-2 flex items-center justify-center gap-2 py-4 bg-slate-900 hover:bg-black active:bg-slate-950 transition-all text-white font-semibold text-base rounded-2xl shadow-lg hover:shadow-xl"
+                                    >
+                                        <i className="fa-solid fa-sign-in-alt"></i> 
+                                        SIGN IN TO INVENTORY
+                                    </button>
+                                </form>
+
+                                <div className="mt-6 text-center">
+                                    <div className="inline-flex items-center gap-2 text-[10px] bg-slate-100 text-slate-500 px-3 py-1 rounded-full font-medium">
+                                        <i className="fa-solid fa-info-circle"></i>
+                                        <span>Demo credentials: <span className="font-mono text-slate-700">admin / threedee123</span></span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-3 leading-tight">This is a client-side security layer.<br />For production use, connect to a real authentication backend.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    // ==================== MAIN APP (when logged in) ====================
+                    <div className="min-h-screen">
+                        {/* HEADER */}
+                        <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row md:justify-between md:items-center sticky top-0 z-10 print-hide shadow-sm gap-4">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-slate-900 p-2.5 rounded-lg text-white">
+                                    <i className="fa-solid fa-layer-group text-xl"></i>
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-bold leading-tight text-slate-900">Three Dee Lab</h1>
+                                    <p className="text-xs font-medium text-slate-500 tracking-wider uppercase">Inventory Management</p>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col md:items-end">
+                                <div className="text-sm font-semibold text-slate-600 mb-2">
+                                    <i className="fa-regular fa-clock mr-1"></i> {currentTime.toLocaleString()}
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    {/* User Info + Logout */}
+                                    <div className="hidden sm:flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 mr-1">
+                                        <div className="text-right">
+                                            <div className="text-sm font-bold text-slate-700 leading-none">{currentUser}</div>
+                                            <div className="text-[9px] text-emerald-600 font-medium tracking-wider">SECURE SESSION</div>
+                                        </div>
+                                        <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                            <i className="fa-solid fa-user-check text-sm"></i>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={handleLogout}
+                                        className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-red-50 border border-slate-300 hover:border-red-200 rounded-xl text-sm font-semibold text-red-600 hover:text-red-700 transition-colors shadow-sm"
+                                        title="Log out of inventory tracker"
+                                    >
+                                        <i className="fa-solid fa-sign-out-alt"></i> 
+                                        <span className="hidden md:inline">Logout</span>
+                                    </button>
+
+                                    <button 
+                                        onClick={handleClearDatabase}
+                                        className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-md text-sm font-semibold text-red-700 hover:bg-red-100 transition-colors shadow-sm"
+                                        title="Wipe database and start fresh"
+                                    >
+                                        <i className="fa-solid fa-trash-can"></i> Reset DB
+                                    </button>
+                                    <button 
+                                        onClick={handleExportExcel}
+                                        className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-md text-sm font-semibold text-green-700 hover:bg-green-100 transition-colors shadow-sm"
+                                    >
+                                        <i className="fa-solid fa-file-excel"></i> Export Excel
+                                    </button>
+                                    <button 
+                                        onClick={toggleBarcodeScanner}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm border ${isScannerActive 
+                                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700' 
+                                            : 'bg-white border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-200'}`}
+                                        title={isScannerActive ? "Stop barcode scanner mode" : "Activate barcode scanner (keyboard emulation)"}
+                                    >
+                                        <i className={`fa-solid fa-barcode ${isScannerActive ? 'text-white' : 'text-emerald-600'}`}></i> 
+                                        <span className="hidden md:inline">{isScannerActive ? 'Stop Scan' : 'Scan Barcode'}</span>
+                                    </button>
+                                    <button 
+                                        onClick={handlePrint}
+                                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-md text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                                    >
+                                        <i className="fa-solid fa-print"></i> Print Report
+                                    </button>
+                                </div>
+                            </div>
+                        </header>
+
+                    {/* PRINT ONLY HEADER */}
+                    <div className="hidden print:block mb-8 pb-4 border-b-2 border-slate-900 mx-8 mt-8">
+                        <h1 className="text-3xl font-bold text-slate-900">Inventory Status Report</h1>
+                        <p className="text-slate-600 mt-1">Three Dee Lab &bull; Generated on {currentTime.toLocaleString()}</p>
+                    </div>
+
+                    <main className="p-6 max-w-[1600px] mx-auto print:p-0">
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            
+                            {/* LEFT SIDE: ADD/EDIT FORM */}
+                            <div className="w-full lg:w-[400px] flex-shrink-0 print-hide">
+                                {/* Barcode Scanner Active / Feedback Banner */}
+                                {(isScannerActive || scanFeedback) && (
+                                    <div className={`mb-3 p-3 rounded-xl border flex items-center gap-3 text-sm shadow-sm ${isScannerActive 
+                                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                                        : 'bg-green-50 border-green-200 text-green-700'}`}>
+                                        <div className="flex-shrink-0">
+                                            <i className={`fa-solid fa-barcode text-lg ${isScannerActive ? 'text-emerald-600' : 'text-green-600'}`}></i>
+                                        </div>
+                                        <div className="flex-1 font-medium">
+                                            {isScannerActive 
+                                                ? 'Barcode scanner active — Use your device scanner now (or type/paste code)' 
+                                                : scanFeedback}
+                                        </div>
+                                        {isScannerActive && (
+                                            <button 
+                                                onClick={toggleBarcodeScanner}
+                                                className="text-xs px-3 py-1 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100 transition-colors font-semibold"
+                                            >
+                                                Stop
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden sticky top-24">
+                                    <div 
+                                        className="bg-slate-900 px-5 py-4 text-white flex justify-between items-center cursor-pointer hover:bg-slate-800 transition-colors"
+                                        onClick={() => {
+                                            handleReset();
+                                            if (!isEditing) setFormData(prev => ({ ...prev, category: 'Other' }));
+                                        }}
+                                        title={isEditing ? "Click to Cancel Edit" : "Click to add a Custom Material"}
+                                    >
+                                        <h2 className="font-semibold flex items-center gap-2">
+                                            <i className={`fa-solid ${isEditing ? 'fa-pen' : 'fa-plus'}`}></i>
+                                            {isEditing ? 'Edit Material' : 'Add Custom Material'}
+                                        </h2>
+                                        {isEditing && (
+                                            <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="text-slate-300 hover:text-white" title="Cancel Edit">
+                                                <i className="fa-solid fa-times"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    <form onSubmit={handleSave} className="p-5 space-y-4">
+                                        
+                                        {/* Category Selection */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Category / Type</label>
+                                            <select 
+                                                name="category" 
+                                                value={formData.category} 
+                                                onChange={handleInputChange}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                            >
+                                                {categories.map(cat => (
+                                                    <option key={cat} value={cat}>{cat}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Custom Category (Shows if 'Other' is selected) */}
+                                        {formData.category === 'Other' && (
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Custom Type Name</label>
+                                                <input 
+                                                    type="text" 
+                                                    name="customCategory" 
+                                                    value={formData.customCategory} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="e.g., Packaging Boxes"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                                    required
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* SKU / Barcode - Full width on top */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                                SKU / Barcode
+                                            </label>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    name="sku" 
+                                                    value={formData.sku} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="e.g., PLA-001 or supplier barcode"
+                                                    className="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm font-mono text-blue-700"
+                                                />
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const autoSku = generateAutoSKU(formData.category, formData.customCategory, inventory);
+                                                        setFormData(prev => ({ ...prev, sku: autoSku }));
+                                                    }}
+                                                    className="px-3 py-2 text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-md flex items-center gap-1.5 transition-colors flex-shrink-0"
+                                                    title="Generate a unique category-based SKU (overwrites current value in field)"
+                                                >
+                                                    <i className="fa-solid fa-sync-alt text-xs"></i>
+                                                    <span className="hidden sm:inline text-[10px] font-semibold">GENERATE</span>
+                                                </button>
+                                            </div>
+
+                                            {/* Live next SKU preview + helper text */}
+                                            {formData.category && (
+                                                <div className="mt-1 flex items-center gap-1.5 text-[10px]">
+                                                    <span className="text-emerald-600 flex items-center gap-1">
+                                                        <i className="fa-solid fa-lightbulb"></i> Next available:
+                                                    </span>
+                                                    <span className="font-mono font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-px rounded border border-emerald-100">
+                                                        {generateAutoSKU(formData.category, formData.customCategory, inventory)}
+                                                    </span>
+                                                    <span className="text-slate-400">• Click GENERATE to use</span>
+                                                </div>
+                                            )}
+                                            <p className="text-[10px] text-slate-400 mt-0.5">Click GENERATE for a category-based sequential SKU (e.g. PLA-001) or type your own / supplier barcode.</p>
+
+                                            {/* Visual Barcode Display (appears after SKU is generated/set) */}
+                                            {formData.sku && (
+                                                <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                                    <div className="flex items-center justify-between mb-1.5">
+                                                        <div className="text-[10px] font-semibold text-slate-600 flex items-center gap-1.5">
+                                                            <i className="fa-solid fa-barcode text-emerald-600"></i>
+                                                            BARCODE PREVIEW
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(formData.sku);
+                                                                    setScanFeedback('SKU copied to clipboard!');
+                                                                    setTimeout(() => setScanFeedback(''), 1500);
+                                                                }}
+                                                                className="text-[10px] px-2 py-0.5 bg-white border border-slate-300 hover:bg-emerald-50 rounded-lg flex items-center gap-1 text-emerald-700 transition-colors"
+                                                            >
+                                                                <i className="fa-solid fa-copy text-xs"></i>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={downloadBarcodePNG}
+                                                                className="text-[10px] px-2 py-0.5 bg-white border border-slate-300 hover:bg-emerald-50 rounded-lg flex items-center gap-1 text-emerald-700 transition-colors"
+                                                                title="Download barcode as PNG"
+                                                            >
+                                                                <i className="fa-solid fa-download text-xs"></i>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={printBarcodeLabel}
+                                                                className="text-[10px] px-2.5 py-0.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg flex items-center gap-1 transition-colors"
+                                                                title="Print clean barcode label"
+                                                            >
+                                                                <i className="fa-solid fa-print text-xs"></i>
+                                                                <span className="hidden sm:inline">Print</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-white p-2 rounded-lg border border-slate-100 flex justify-center">
+                                                        <svg ref={barcodeSvgRef} className="max-w-full h-auto"></svg>
+                                                    </div>
+                                                    <div className="text-center text-[10px] text-slate-500 mt-1 font-mono tracking-wider">
+                                                        {formData.sku}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Item Name / Desc - Full width, directly below SKU */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Item Name / Desc</label>
+                                            <input 
+                                                type="text" 
+                                                name="itemName" 
+                                                value={formData.itemName} 
+                                                onChange={handleInputChange}
+                                                placeholder="e.g., P1S Combo, Matte Black"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                                required
+                                            />
+                                        </div>
+
+                                        {/* Company / Brand + Supplier / Vendor - side by side */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Company / Brand</label>
+                                                <input 
+                                                    type="text" 
+                                                    name="brand" 
+                                                    value={formData.brand} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="e.g., Bambu, Amazon"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                                    required
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Supplier / Vendor</label>
+                                                <input 
+                                                    type="text" 
+                                                    name="supplier" 
+                                                    value={formData.supplier} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="e.g., AliExpress, Polymaker"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Detailed Description & Location */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Description / Notes</label>
+                                                <input 
+                                                    type="text" 
+                                                    name="description" 
+                                                    value={formData.description} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="Specific traits/details"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Storage Location</label>
+                                                <input 
+                                                    type="text" 
+                                                    name="location" 
+                                                    value={formData.location} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="e.g., Shelf A2, Dry Box 1"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm font-semibold"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Stock Status Dropdown */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Stock Status Override</label>
+                                            <select 
+                                                name="status" 
+                                                value={formData.status} 
+                                                onChange={handleInputChange}
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 focus:border-slate-900 sm:text-sm"
+                                            >
+                                                <option value="Auto">Auto (Calculated from Stock)</option>
+                                                <option value="In Stock">In Stock</option>
+                                                <option value="Low">Low</option>
+                                                <option value="Reorder">Reorder</option>
+                                                <option value="Ordered">Ordered</option>
+                                                <option value="Damaged">Damaged / Scrap</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Stock Weights/Amounts */}
+                                        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                            <div className="col-span-2 flex justify-between items-center mb-1">
+                                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Tracking Units & Levels</label>
+                                                <select 
+                                                    name="unitType" 
+                                                    value={formData.unitType} 
+                                                    onChange={handleInputChange}
+                                                    className="text-xs bg-white border border-slate-300 rounded px-1 py-0.5"
+                                                >
+                                                    <optgroup label="Weight / Count">
+                                                        <option value="g">Grams (g)</option>
+                                                        <option value="kg">Kilograms (kg)</option>
+                                                        <option value="pcs">Pieces (pcs)</option>
+                                                    </optgroup>
+                                                    <optgroup label="Liquid (Metric)">
+                                                        <option value="ml">Milliliters (ml)</option>
+                                                        <option value="L">Liters (L)</option>
+                                                    </optgroup>
+                                                    <optgroup label="Distance (Metric)">
+                                                        <option value="mm">Millimeters (mm)</option>
+                                                        <option value="cm">Centimeters (cm)</option>
+                                                        <option value="m">Meters (m)</option>
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Total Unit Size</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type="number" 
+                                                        name="totalAmount" 
+                                                        value={formData.totalAmount} 
+                                                        onChange={handleInputChange}
+                                                        min="1"
+                                                        step="any"
+                                                        className="w-full pl-3 pr-8 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm"
+                                                        required
+                                                    />
+                                                    <span className="absolute right-3 top-2 text-slate-400 text-sm">{formData.unitType}</span>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Qty on Hand (Current)</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type="number" 
+                                                        name="remainingAmount" 
+                                                        value={formData.remainingAmount} 
+                                                        onChange={handleInputChange}
+                                                        min="0"
+                                                        step="any"
+                                                        className="w-full pl-3 pr-8 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm font-semibold text-blue-700"
+                                                        required
+                                                    />
+                                                    <span className="absolute right-3 top-2 text-slate-400 text-sm">{formData.unitType}</span>
+                                                </div>
+                                            </div>
+                                            <div className="col-span-2">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <label className="block text-xs font-semibold text-slate-500">Reorder Level Threshold</label>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[10px] font-bold uppercase tracking-wide ${formData.enableReorderAlert ? 'text-green-600' : 'text-slate-400'}`}>{formData.enableReorderAlert ? 'Alerts ON' : 'Alerts OFF'}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFormData(prev => ({ ...prev, enableReorderAlert: !prev.enableReorderAlert }))}
+                                                            className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${formData.enableReorderAlert ? 'bg-green-500' : 'bg-slate-300'}`}
+                                                        >
+                                                            <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm ${formData.enableReorderAlert ? 'translate-x-4' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="relative">
+                                                    <input 
+                                                        type="number" 
+                                                        name="reorderLevel" 
+                                                        value={formData.reorderLevel} 
+                                                        onChange={handleInputChange}
+                                                        min="0"
+                                                        step="any"
+                                                        disabled={!formData.enableReorderAlert}
+                                                        className={`w-full pl-3 pr-8 py-2 border rounded-md shadow-sm sm:text-sm font-semibold transition-colors ${formData.enableReorderAlert ? 'border-red-300 bg-red-50 focus:ring-2 focus:ring-red-500 text-red-800' : 'border-slate-200 bg-slate-100 text-slate-400'}`}
+                                                        required
+                                                    />
+                                                    <span className={`absolute right-3 top-2 text-sm ${formData.enableReorderAlert ? 'text-red-400' : 'text-slate-400'}`}>{formData.unitType}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Pricing (PHP) */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Cost (Paid)</label>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-2 text-slate-500 font-bold">₱</span>
+                                                    <input 
+                                                        type="number" 
+                                                        name="cost" 
+                                                        value={formData.cost} 
+                                                        onChange={handleInputChange}
+                                                        min="0"
+                                                        step="0.01"
+                                                        placeholder="0.00"
+                                                        className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm"
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Retail Price</label>
+                                                <div className="relative">
+                                                    <span className="absolute left-3 top-2 text-slate-500 font-bold">₱</span>
+                                                    <input 
+                                                        type="number" 
+                                                        name="retailPrice" 
+                                                        value={formData.retailPrice} 
+                                                        onChange={handleInputChange}
+                                                        min="0"
+                                                        step="0.01"
+                                                        placeholder="0.00"
+                                                        className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        {formData.totalAmount > 0 && formData.cost > 0 && (
+                                            <p className="text-xs text-slate-500 mt-1 text-right">
+                                                Unit Cost: ₱{(formData.cost / formData.totalAmount).toFixed(4)} / {formData.unitType}
+                                            </p>
+                                        )}
+
+                                        {/* Image URL Placeholder */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Image Link (URL)</label>
+                                            <div className="flex items-center gap-2">
+                                                <i className="fa-solid fa-image text-slate-400"></i>
+                                                <input 
+                                                    type="url" 
+                                                    name="imageUrl" 
+                                                    value={formData.imageUrl} 
+                                                    onChange={handleInputChange}
+                                                    placeholder="https://example.com/spool.jpg"
+                                                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-2 focus:ring-slate-900 sm:text-sm"
+                                                />
+                                            </div>
+                                            {formData.imageUrl && (
+                                                <div className="mt-2 flex justify-center border rounded-md p-1 bg-slate-50 mb-4">
+                                                    <img src={formData.imageUrl} alt="Preview" className="h-20 object-contain" onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }} />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Performance Rating */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Performance Rating</label>
+                                            <div className="flex gap-2 items-center bg-slate-50 p-2 border border-slate-200 rounded-lg mb-4">
+                                                {[1, 2, 3, 4, 5].map(star => (
+                                                    <button
+                                                        type="button"
+                                                        key={star}
+                                                        onClick={() => setFormData(prev => ({ ...prev, rating: star }))}
+                                                        className={`text-2xl transition-colors focus:outline-none ${formData.rating >= star ? 'text-yellow-400 drop-shadow-sm' : 'text-slate-300 hover:text-yellow-200'}`}
+                                                    >
+                                                        <i className="fa-solid fa-star"></i>
+                                                    </button>
+                                                ))}
+                                                <span className="text-xs text-slate-400 ml-2 font-medium">
+                                                    {formData.rating === 0 ? 'Not Rated' : `${formData.rating} / 5 Stars`}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Submit Button */}
+                                        <button 
+                                            type="submit" 
+                                            className={`w-full flex justify-center items-center gap-2 py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-slate-800'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-colors mt-2`}
+                                        >
+                                            <i className="fa-solid fa-save"></i> {isEditing ? 'Update Material' : 'Add to Inventory'}
+                                        </button>
+                                        
+                                    </form>
+                                </div>
+                            </div>
+
+                            {/* RIGHT SIDE: DATABASE VIEW */}
+                            <div className="flex-1 print-expand">
+                                
+                                {/* Top Stat Cards */}
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6 print-hide">
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
+                                        <div className="bg-blue-100 p-3 rounded-full text-blue-600 w-12 h-12 flex justify-center items-center">
+                                            <i className="fa-solid fa-layer-group text-xl"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-500">Total Items</p>
+                                            <p className="text-2xl font-bold text-slate-900">{inventory.length}</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
+                                        <div className="bg-emerald-100 p-3 rounded-full text-emerald-600 w-12 h-12 flex justify-center items-center">
+                                            <i className="fa-solid fa-box-open text-xl"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-500">Est. Stock Value</p>
+                                            <p className="text-2xl font-bold text-slate-900">₱{totalValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
+                                        <div className="bg-red-100 p-3 rounded-full text-red-600 w-12 h-12 flex justify-center items-center">
+                                            <i className="fa-solid fa-triangle-exclamation text-xl"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-500">Low Stock Alerts</p>
+                                            <p className="text-2xl font-bold text-slate-900">{lowStockCount}</p>
+                                        </div>
+                                    </div>
+                                    <div 
+                                        className={`bg-white rounded-xl shadow-sm border ${filterStatus === 'Damaged' ? 'border-stone-800 ring-2 ring-stone-800' : 'border-slate-200'} p-4 flex items-center gap-4 cursor-pointer hover:bg-stone-50 transition-all`}
+                                        onClick={() => setFilterStatus(filterStatus === 'Damaged' ? 'All' : 'Damaged')}
+                                        title="Click to toggle damaged items view"
+                                    >
+                                        <div className="bg-stone-100 p-3 rounded-full text-stone-600 w-12 h-12 flex justify-center items-center">
+                                            <i className="fa-solid fa-burst text-xl"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-500">Damaged List</p>
+                                            <p className="text-2xl font-bold text-slate-900">{damagedCount}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Main Table Container */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print-expand print-border">
+                                    
+                                    {/* Controls Header */}
+                                    <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print-hide">
+                                        <h3 className="font-bold text-slate-800 text-lg">Current Inventory</h3>
+                                        
+                                        <div className="flex gap-3 w-full sm:w-auto">
+                                            <div className="relative flex-1 sm:w-64">
+                                                <i className="fa-solid fa-search absolute left-3 top-3 text-slate-400 text-sm"></i>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Search materials..."
+                                                    value={searchQuery}
+                                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-slate-900"
+                                                />
+                                            </div>
+                                            <select 
+                                                value={filterCategory}
+                                                onChange={(e) => setFilterCategory(e.target.value)}
+                                                className="border border-slate-300 rounded-md text-sm px-3 py-2 bg-white focus:ring-2 focus:ring-slate-900"
+                                            >
+                                                <option value="All">All Types</option>
+                                                {categories.map(cat => (
+                                                    <option key={cat} value={cat}>{cat}</option>
+                                                ))}
+                                            </select>
+                                            <select 
+                                                value={filterStatus}
+                                                onChange={(e) => setFilterStatus(e.target.value)}
+                                                className="border border-slate-300 rounded-md text-sm px-3 py-2 bg-white focus:ring-2 focus:ring-slate-900"
+                                            >
+                                                <option value="All">All Statuses</option>
+                                                <option value="Damaged">Damaged Only</option>
+                                                <option value="In Stock">In Stock</option>
+                                                <option value="Low">Low Stock</option>
+                                                <option value="Reorder">Reorder</option>
+                                                <option value="Ordered">Ordered</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Table */}
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200 print-text-black">
+                                                    <th className="px-5 py-3 font-semibold">Image Link</th>
+                                                    <th className="px-5 py-3 font-semibold">Material Details</th>
+                                                    <th className="px-5 py-3 font-semibold">Stock Level</th>
+                                                    <th className="px-5 py-3 font-semibold print-hide">Status</th>
+                                                    <th className="px-5 py-3 font-semibold text-right">Financials (PHP)</th>
+                                                    <th className="px-5 py-3 font-semibold text-right print-hide">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-sm">
+                                                {filteredInventory.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-5 py-8 text-center text-slate-400 italic">
+                                                            No inventory items found. Add some from the panel on the left.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    filteredInventory.map(item => {
+                                                        const pct = item.totalAmount > 0 ? Math.max(0, Math.min(100, (item.remainingAmount / item.totalAmount) * 100)) : 0;
+                                                        const value = (item.remainingAmount / item.totalAmount) * item.cost;
+                                                        const displayCat = item.category === 'Other' && item.customCategory ? item.customCategory : item.category;
+                                                        const updatedDate = new Date(item.lastUpdated).toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                                                        const isDamaged = item.status === 'Damaged';
+
+                                                        return (
+                                                            <tr key={item.id} className={`${isDamaged ? 'bg-slate-200 hover:bg-slate-300' : 'hover:bg-slate-50'} transition-colors print-page-break print-text-black group`}>
+                                                                
+                                                                <td className="px-5 py-4 w-20">
+                                                                    <div className={`w-12 h-12 border rounded flex justify-center items-center overflow-hidden ${isDamaged ? 'bg-slate-300 border-slate-400 opacity-80' : 'bg-slate-200 border-slate-300'}`}>
+                                                                        {item.imageUrl ? (
+                                                                            <a href={item.imageUrl} target="_blank" rel="noopener noreferrer" title="View full image" className="w-full h-full block">
+                                                                                <img src={item.imageUrl} alt={item.brand} className={`w-full h-full object-cover hover:scale-110 transition-transform duration-300 ${isDamaged ? 'grayscale' : ''}`} onError={(e) => { e.target.onerror = null; e.target.parentElement.innerHTML = '<i class="fa-solid fa-image text-slate-400"></i>'; }} />
+                                                                            </a>
+                                                                        ) : (
+                                                                            <i className={`fa-solid fa-image ${isDamaged ? 'text-slate-500' : 'text-slate-400'}`}></i>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+
+                                                                <td className="px-5 py-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`hidden sm:flex justify-center items-center w-8 h-8 rounded border print-hide ${isDamaged ? 'bg-slate-300 border-slate-400' : 'bg-slate-100 border-slate-200'}`}>
+                                                                            {getCategoryIcon(item.category, isDamaged)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className={`font-bold text-base ${isDamaged ? 'text-slate-700' : 'text-slate-900'}`}>{item.brand} - {item.itemName}</p>
+                                                                            
+                                                                            {/* Star Rating Display */}
+                                                                            {item.rating > 0 && (
+                                                                                <div className="flex gap-0.5 mt-0.5 print-hide">
+                                                                                    {[...Array(5)].map((_, i) => (
+                                                                                        <i key={i} className={`fa-solid fa-star text-[10px] ${i < item.rating ? (isDamaged ? 'text-slate-400' : 'text-yellow-400') : (isDamaged ? 'text-slate-300' : 'text-slate-200')}`}></i>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+
+                                                                            <p className={`text-xs flex items-center flex-wrap gap-2 mt-0.5 ${isDamaged ? 'text-slate-600' : 'text-slate-500'}`}>
+                                                                                <span className={`font-semibold px-1.5 py-0.5 rounded ${isDamaged ? 'bg-slate-300 text-slate-700' : 'bg-slate-100 text-slate-600'}`}>{displayCat}</span>
+                                                                                {item.sku && <span className="font-mono text-[11px] bg-slate-100 px-1 border border-slate-200 rounded tracking-tight">SKU: {item.sku}</span>}
+                                                                                {item.location && <span className="text-blue-700 font-medium"><i className="fa-solid fa-location-dot mr-1"></i>{item.location}</span>}
+                                                                                {item.supplier && <span><i className="fa-solid fa-truck-fast mr-1"></i>{item.supplier}</span>}
+                                                                            </p>
+                                                                            {item.description && (
+                                                                                <p className={`text-[11px] mt-1 italic ${isDamaged ? 'text-slate-500' : 'text-slate-500'} line-clamp-1 print-hide`} title={item.description}>
+                                                                                    {item.description}
+                                                                                </p>
+                                                                            )}
+                                                                            <p className={`text-[10px] mt-1 print-hide ${isDamaged ? 'text-slate-500' : 'text-slate-400'}`}>
+                                                                                Last Updated: {updatedDate}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                
+                                                                <td className="px-5 py-4 w-48 sm:w-64">
+                                                                    <div className="flex justify-between text-xs font-medium mb-1 items-center">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <button onClick={() => handleStockAdjust(item, -1)} className={`w-5 h-5 flex justify-center items-center rounded text-white print-hide transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDamaged ? 'bg-slate-400' : 'bg-slate-800 hover:bg-slate-700'}`} disabled={isDamaged || item.remainingAmount <= 0} title="Quick Consume (-1)"><i className="fa-solid fa-minus text-[10px]"></i></button>
+                                                                            <span className={isDamaged ? 'text-slate-700 font-bold text-sm' : (item.remainingAmount <= item.reorderLevel ? 'text-red-600 font-bold text-sm' : 'text-slate-800 text-sm')}>
+                                                                                {item.remainingAmount} {item.unitType}
+                                                                            </span>
+                                                                            <button onClick={() => handleStockAdjust(item, 1)} className={`w-5 h-5 flex justify-center items-center rounded text-white print-hide transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDamaged ? 'bg-slate-400' : 'bg-slate-800 hover:bg-slate-700'}`} disabled={isDamaged} title="Quick Add (+1)"><i className="fa-solid fa-plus text-[10px]"></i></button>
+                                                                        </div>
+                                                                        <span className={isDamaged ? 'text-slate-500' : 'text-slate-400'}>/ {item.totalAmount} {item.unitType}</span>
+                                                                    </div>
+                                                                    <div className={`w-full rounded-full h-1.5 print-hide ${isDamaged ? 'bg-slate-300' : 'bg-slate-200'}`}>
+                                                                        <div 
+                                                                            className={`h-1.5 rounded-full transition-all duration-500 ${isDamaged ? 'bg-slate-500' : (pct > 50 ? 'bg-green-500' : pct > 20 ? 'bg-yellow-400' : 'bg-red-500')}`}
+                                                                            style={{ width: `${pct}%` }}
+                                                                        ></div>
+                                                                    </div>
+                                                                </td>
+
+                                                                <td className="px-5 py-4 print-hide">
+                                                                    <StatusBadge item={item} />
+                                                                </td>
+
+                                                                <td className="px-5 py-4 text-right">
+                                                                    <p className={`font-semibold ${isDamaged ? 'text-slate-700 line-through opacity-80' : 'text-slate-900'}`}>₱{(value || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                                                    <p className={`text-xs ${isDamaged ? 'text-slate-600' : 'text-slate-500'}`}>Cost: ₱{item.cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                                                                    {item.retailPrice > 0 && <p className={`text-xs print-hide ${isDamaged ? 'text-slate-500' : 'text-slate-400'}`}>Retail: ₱{item.retailPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>}
+                                                                </td>
+
+                                                                <td className="px-5 py-4 text-right print-hide">
+                                                                    <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <button 
+                                                                            onClick={() => setHistoryModalItem(item)}
+                                                                            className={`p-1.5 rounded border border-transparent transition-colors ${isDamaged ? 'text-slate-600 hover:bg-slate-300 hover:border-slate-400' : 'text-slate-600 hover:bg-slate-200 hover:border-slate-300'}`}
+                                                                            title="View In/Out History"
+                                                                        >
+                                                                            <i className="fa-solid fa-clock-rotate-left"></i>
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleEdit(item)}
+                                                                            className={`p-1.5 rounded border border-transparent transition-colors ${isDamaged ? 'text-slate-600 hover:bg-slate-300 hover:border-slate-400' : 'text-blue-600 hover:bg-blue-50 hover:border-blue-200'}`}
+                                                                            title="Edit & Update Stock"
+                                                                        >
+                                                                            <i className="fa-solid fa-pen"></i>
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleDelete(item.id)}
+                                                                            className={`p-1.5 rounded border border-transparent transition-colors ${isDamaged ? 'text-red-500 hover:bg-red-200 hover:border-red-300' : 'text-red-600 hover:bg-red-50 hover:border-red-200'}`}
+                                                                            title="Delete Item"
+                                                                        >
+                                                                            <i className="fa-solid fa-trash"></i>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {/* End Table */}
+                                </div>
+
+                                {/* Data Chart Overview */}
+                                <InventoryChart inventory={inventory} />
+                                
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* HISTORY MODAL OVERLAY */}
+                    {historyModalItem && (
+                        <div className="fixed inset-0 bg-slate-900/60 flex justify-center items-center z-50 p-4 print-hide backdrop-blur-sm">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden border border-slate-200">
+                                
+                                <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                                    <div>
+                                        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
+                                            <i className="fa-solid fa-clock-rotate-left text-blue-600"></i> Stock History Log
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mt-1 font-medium">{historyModalItem.brand} - {historyModalItem.itemName}</p>
+                                    </div>
+                                    <button onClick={() => setHistoryModalItem(null)} className="text-slate-400 hover:text-slate-800 bg-slate-200 hover:bg-slate-300 w-8 h-8 rounded-full flex justify-center items-center transition-colors">
+                                        <i className="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                                
+                                <div className="p-6 overflow-y-auto bg-slate-50/50 flex-1">
+                                    {(!historyModalItem.history || historyModalItem.history.length === 0) ? (
+                                        <div className="text-center py-8">
+                                            <i className="fa-solid fa-folder-open text-4xl text-slate-300 mb-3"></i>
+                                            <p className="text-slate-500 italic font-medium">No history records found for this item.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                                            {historyModalItem.history.slice().reverse().map((entry, idx) => (
+                                                <div key={idx} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                                    
+                                                    {/* Center Timeline Dot */}
+                                                    <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-100 text-slate-500 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
+                                                        {entry.type === 'IN' ? <i className="fa-solid fa-arrow-down text-green-600 text-sm"></i> : <i className="fa-solid fa-arrow-up text-red-500 text-sm"></i>}
+                                                    </div>
+                                                    
+                                                    {/* Event Card */}
+                                                    <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <div className={`font-bold text-lg leading-none ${entry.type === 'IN' ? 'text-green-600' : 'text-red-500'}`}>
+                                                                {entry.type === 'IN' ? '+' : '-'}{entry.change} <span className="text-xs text-slate-400 font-normal uppercase tracking-wider">{historyModalItem.unitType}</span>
+                                                            </div>
+                                                            <time className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                                                                {new Date(entry.date).toLocaleDateString()}
+                                                            </time>
+                                                        </div>
+                                                        <p className="text-sm font-medium text-slate-700 mt-2">{entry.notes || (entry.type === 'IN' ? 'Stock Added' : 'Stock Removed')}</p>
+                                                        <p className="text-[10px] text-slate-400 mt-1"><i className="fa-regular fa-clock mr-1"></i>{new Date(entry.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                    </div>
+                                                    
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            ));
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
